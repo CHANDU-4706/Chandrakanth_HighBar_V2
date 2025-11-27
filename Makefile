@@ -9,3 +9,5 @@ test:
 
 lint:
 	pylint src/
+
+# End of Makefile
