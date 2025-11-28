@@ -10,3 +10,7 @@ data/synthetic_fb_ads_undergarments.csv
 
 # OS
 .DS_Store
+
+# Runtime
+logs/
+reports/

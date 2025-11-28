@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 from typing import List
 import yaml
 import os
+from utils.logger import logger
+from utils.error_handler import safe_execute
 
 # Load config
 with open("config/config.yaml", "r") as f:
@@ -21,16 +23,19 @@ class CreativeSuggestions(BaseModel):
 
 class CreativeGenerator:
     def __init__(self):
+        logger.info("Initializing CreativeGenerator")
         self.llm = ChatGroq(
             model=config["llm"]["model"],
             temperature=0.7, # Higher temperature for creativity
             groq_api_key=os.getenv("GROQ_API_KEY")
         )
 
+    @safe_execute(default_return=None, log_context="CreativeGenerator.generate", retries=3)
     def generate(self, insights: str, top_performing_ads: str) -> CreativeSuggestions:
         """
         Generates new creative concepts based on insights and top performers.
         """
+        logger.info("Generating creative recommendations...")
         system_prompt = """You are a Creative Improvement Generator.
 Your goal is to propose new creative angles for Facebook Ads.
 

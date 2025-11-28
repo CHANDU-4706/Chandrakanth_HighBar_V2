@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 from typing import List
 import yaml
 import os
+from utils.logger import logger
+from utils.error_handler import safe_execute, AgentError
 
 # Load config
 with open("config/config.yaml", "r") as f:
@@ -19,13 +21,16 @@ class Plan(BaseModel):
 
 class PlannerAgent:
     def __init__(self):
+        logger.info("Initializing PlannerAgent")
         self.llm = ChatGroq(
             model=config["llm"]["model"],
             temperature=config["llm"]["temperature"],
             groq_api_key=os.getenv("GROQ_API_KEY")
         )
 
+    @safe_execute(log_context="PlannerAgent.create_plan", raise_on_error=True, retries=3)
     def create_plan(self, user_query: str) -> Plan:
+        logger.info(f"Creating plan for query: {user_query}")
         with open("prompts/planner_prompt.md", "r") as f:
             system_prompt = f.read()
         
