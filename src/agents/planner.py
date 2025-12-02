@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field
 from typing import List
 import yaml
 import os
-from utils.logger import logger
-from utils.error_handler import safe_execute, AgentError
+from src.utils.logger import logger
+from src.utils.error_handler import safe_execute, AgentError
 
 # Load config
 with open("config/config.yaml", "r") as f:

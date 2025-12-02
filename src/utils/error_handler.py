@@ -2,10 +2,22 @@ import functools
 import traceback
 import time
 from typing import Any, Callable, Optional, Type
-from .logger import logger
+from src.utils.logger import logger
 
 class AgentError(Exception):
     """Base exception for Agent failures."""
+    pass
+
+class SchemaValidationError(AgentError):
+    """Raised when data does not match the expected schema."""
+    pass
+
+class DataProcessingError(AgentError):
+    """Raised when data processing fails (e.g., calculation errors)."""
+    pass
+
+class AgentExecutionError(AgentError):
+    """Raised when an agent fails to execute its task."""
     pass
 
 def safe_execute(
@@ -13,7 +25,8 @@ def safe_execute(
     log_context: str = "Operation",
     raise_on_error: bool = False,
     retries: int = 0,
-    backoff_factor: float = 1.0
+    backoff_factor: float = 1.0,
+    allowed_exceptions: tuple = ()
 ):
     """
     Decorator to wrap a function with try-except block and retry logic.
@@ -24,6 +37,7 @@ def safe_execute(
         raise_on_error: If True, re-raises the exception after logging (and retries).
         retries: Number of times to retry on failure.
         backoff_factor: Multiplier for sleep time between retries.
+        allowed_exceptions: Tuple of exceptions that should NOT trigger a retry (fail fast).
     """
     def decorator(func: Callable):
         @functools.wraps(func)
@@ -35,6 +49,11 @@ def safe_execute(
                     result = func(*args, **kwargs)
                     logger.debug(f"Completed {log_context} successfully.")
                     return result
+                except allowed_exceptions as e:
+                    logger.error(f"Critical error in {log_context}: {str(e)} (No Retry)")
+                    if raise_on_error:
+                        raise e
+                    return default_return
                 except Exception as e:
                     error_msg = f"Error in {log_context} (Attempt {attempt + 1}): {str(e)}"
                     logger.warning(error_msg)
@@ -49,7 +68,11 @@ def safe_execute(
                         logger.debug(traceback.format_exc())
                         
                         if raise_on_error:
-                            raise AgentError(error_msg) from e
+                            # If it's already one of our custom errors, re-raise it.
+                            # Otherwise, wrap it in AgentExecutionError
+                            if isinstance(e, AgentError):
+                                raise e
+                            raise AgentExecutionError(error_msg) from e
                         
                         return default_return
         return wrapper

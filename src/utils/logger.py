@@ -17,22 +17,44 @@ class JsonFormatter(logging.Formatter):
             "funcName": record.funcName,
             "lineNo": record.lineno
         }
+        if hasattr(record, "decision_data"):
+            log_record["decision"] = record.decision_data
+            
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
         return json.dumps(log_record)
 
+class LoggerWrapper(logging.Logger):
+    def decision(self, agent_name: str, input_data: str, output_data: str, reason: str):
+        """
+        Log a decision made by an agent.
+        """
+        decision_data = {
+            "agent": agent_name,
+            "input_summary": input_data[:200] + "..." if len(input_data) > 200 else input_data,
+            "output_summary": output_data[:200] + "..." if len(output_data) > 200 else output_data,
+            "reason": reason
+        }
+        self._log(logging.INFO, f"Decision by {agent_name}: {reason}", (), extra={"decision_data": decision_data})
+
+logging.setLoggerClass(LoggerWrapper)
+
 def setup_logger(name="kasparro_app", log_dir="logs"):
     """
     Sets up a logger with console (INFO) and file (DEBUG/JSON) handlers.
+    Creates a unique run folder.
     """
-    os.makedirs(log_dir, exist_ok=True)
+    # Create a unique run folder based on timestamp
+    run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    run_dir = os.path.join(log_dir, run_id)
+    os.makedirs(run_dir, exist_ok=True)
     
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     
     # Prevent adding handlers multiple times
     if logger.hasHandlers():
-        return logger
+        return logger, run_dir
 
     # Console Handler - Human readable
     console_handler = logging.StreamHandler(sys.stdout)
@@ -42,13 +64,14 @@ def setup_logger(name="kasparro_app", log_dir="logs"):
     logger.addHandler(console_handler)
 
     # File Handler - Machine readable (JSON)
-    log_file = os.path.join(log_dir, "app.json")
+    log_file = os.path.join(run_dir, "app.json")
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(JsonFormatter())
     logger.addHandler(file_handler)
 
-    return logger
+    return logger, run_dir
 
 # Global logger instance
-logger = setup_logger()
+# Note: We might need to re-initialize this in run.py to get the run_dir
+logger, current_run_dir = setup_logger()

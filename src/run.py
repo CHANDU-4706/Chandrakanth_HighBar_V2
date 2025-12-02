@@ -2,14 +2,15 @@ import argparse
 import asyncio
 import os
 import json
-from dotenv import load_dotenv
 import time
-from agents.planner import PlannerAgent
-from agents.data_agent import DataAgent
-from agents.insight_agent import InsightAgent
-from agents.creative_generator import CreativeGenerator
-from agents.evaluator import EvaluatorAgent
-from utils.logger import logger
+from dotenv import load_dotenv
+from src.agents.planner import PlannerAgent
+from src.agents.data_agent import DataAgent
+from src.agents.insight_agent import InsightAgent
+from src.agents.creative_generator import CreativeGenerator
+from src.agents.evaluator import EvaluatorAgent
+from src.utils.logger import logger, current_run_dir
+from src.utils.error_handler import AgentError
 
 # Load environment variables
 load_dotenv(".env")
@@ -21,12 +22,13 @@ if not api_key:
     exit(1)
 
 async def main():
-    parser = argparse.ArgumentParser(description="Kasparro Agentic FB Analyst")
+    parser = argparse.ArgumentParser(description="Kasparro Agentic FB Analyst V2")
     parser.add_argument("query", type=str, help="The analysis query (e.g., 'Analyze ROAS drop')")
     args = parser.parse_args()
 
     query = args.query
     logger.info(f"Starting Analysis for: '{query}'")
+    logger.info(f"Run Logs Directory: {current_run_dir}")
 
     try:
         # Initialize Agents
@@ -51,48 +53,101 @@ async def main():
         logger.error(f"Planning failed: {e}")
         return
     
-    context = {"query": query, "data_summary": "", "insights": "", "top_ads": ""}
+    context = {
+        "query": query, 
+        "data_summary": "", 
+        "insights_json": "[]", 
+        "top_ads": "",
+        "creative_recommendations": None
+    }
     
     # Step 2: Execute Plan
     for i, step in enumerate(plan.steps):
         logger.info(f"▶️ Step {i+1}: {step.step_name} ({step.agent}) - {step.description}")
         
-        step_output = ""
-        if step.agent == "DataAgent":
-            result = data_agent.execute(step.description)
-            context["data_summary"] += f"\n\n### Data Output ({step.step_name}):\n{result}"
-            step_output = result
+        try:
+            step_output = ""
+            if step.agent == "DataAgent":
+                result = data_agent.execute(step.description)
+                context["data_summary"] += f"\n\n### Data Output ({step.step_name}):\n{result}"
+                step_output = result
+                
+            elif step.agent == "InsightAgent":
+                # Insight Agent now returns JSON string
+                result_json = insight_agent.analyze(context["data_summary"], step.description)
+                context["insights_json"] = result_json # Store raw JSON for pipeline
+                
+                # Parse for readable context
+                try:
+                    insights = json.loads(result_json)
+                    readable_insights = ""
+                    for insight in insights:
+                        readable_insights += f"- **Hypothesis**: {insight['hypothesis']}\n"
+                        readable_insights += f"  - Confidence: {insight['confidence']}\n"
+                        readable_insights += f"  - Impact: {insight['impact']}\n"
+                    context["insights_readable"] = readable_insights
+                except:
+                    context["insights_readable"] = "Failed to parse insights JSON."
+                
+                step_output = context["insights_readable"]
+                
+            elif step.agent == "CreativeGenerator":
+                # For creative gen, we need top ads. Let's ask DataAgent to get them if not present.
+                if not context["top_ads"]:
+                    logger.info("Fetching top ads for context...")
+                    top_ads = data_agent.execute("Get top 5 ads by ROAS with their creative messages")
+                    context["top_ads"] = top_ads
+                
+                # Pass JSON insights directly
+                result = creative_gen.generate(context["insights_json"], context["top_ads"])
+                if result:
+                    context["creative_recommendations"] = result
+                    step_output = str(result.model_dump())
+                else:
+                    logger.warning("Creative Generator returned no results.")
             
-        elif step.agent == "InsightAgent":
-            result = insight_agent.analyze(context["data_summary"], step.description)
-            context["insights"] += f"\n\n### Insights ({step.step_name}):\n{result}"
-            step_output = result
+            logger.info(f"Step {i+1} completed.")
+            logger.debug(f"Step Output: {step_output[:200]}...")
             
-        elif step.agent == "CreativeGenerator":
-            # For creative gen, we need top ads. Let's ask DataAgent to get them if not present.
-            if not context["top_ads"]:
-                logger.info("Fetching top ads for context...")
-                top_ads = data_agent.execute("Get top 5 ads by ROAS with their creative messages")
-                context["top_ads"] = top_ads
-            
-            result = creative_gen.generate(context["insights"], context["top_ads"])
-            if result:
-                # Convert Pydantic model to JSON/Dict for report
-                result_json = result.model_dump_json()
-                context["creative_recommendations"] = result_json
-                step_output = result_json
-            else:
-                logger.warning("Creative Generator returned no results.")
-        
-        logger.info(f"Step {i+1} completed.")
-        logger.debug(f"Step Output: {step_output[:200]}...") # Log first 200 chars
-        
-        logger.info("Waiting 5s to respect API rate limits...")
-        time.sleep(5)
+            logger.info("Waiting 2s to respect API rate limits...")
+            time.sleep(2)
+
+        except AgentError as e:
+            logger.error(f"Step {i+1} failed with AgentError: {e}")
+            # Decide whether to continue or stop based on severity. For V2, we log and continue if possible, or exit.
+            # For now, let's continue but mark as failed.
+        except Exception as e:
+            logger.error(f"Step {i+1} failed with unexpected error: {e}")
 
     # Step 3: Compile Report
     logger.info("Compiling Final Report...")
-    report = f"""# Kasparro Analysis Report
+    
+    # Parse insights for report
+    insights_section = ""
+    try:
+        insights_data = json.loads(context["insights_json"])
+        for idx, insight in enumerate(insights_data):
+            insights_section += f"### Insight {idx+1}: {insight['hypothesis']}\n"
+            insights_section += f"- **Confidence**: {insight['confidence']} | **Impact**: {insight['impact']}\n"
+            insights_section += f"- **Reasoning**: {insight['reasoning']}\n"
+            insights_section += "- **Evidence**:\n"
+            for ev in insight['evidence']:
+                insights_section += f"  - {ev['metric']}: {ev['delta']} (Segment: {ev.get('segment', 'N/A')})\n"
+            insights_section += "\n"
+    except:
+        insights_section = "Could not parse insights data.\n"
+
+    # Parse creatives for report
+    creatives_section = ""
+    if context["creative_recommendations"]:
+        for rec in context["creative_recommendations"].recommendations:
+            creatives_section += f"### Campaign: {rec.campaign_name}\n"
+            creatives_section += f"- **Issue**: {rec.current_performance_issue}\n"
+            creatives_section += f"- **New Headline**: {rec.suggested_headline}\n"
+            creatives_section += f"- **New Message**: {rec.suggested_message}\n"
+            creatives_section += f"- **Reasoning**: {rec.reasoning}\n\n"
+
+    report = f"""# Kasparro Analysis Report (V2 High Bar)
 
 ## Query
 {query}
@@ -100,48 +155,31 @@ async def main():
 ## Data Analysis
 {context['data_summary']}
 
-## Insights
-{context['insights']}
+## Strategic Insights
+{insights_section}
 
 ## Creative Recommendations
+{creatives_section}
 """
-    if "creative_recommendations" in context:
-        try:
-            recs = json.loads(context["creative_recommendations"])
-            if "recommendations" in recs:
-                 for rec in recs["recommendations"]:
-                    report += f"\n### Campaign: {rec['campaign_name']}\n"
-                    report += f"- **Issue**: {rec['current_performance_issue']}\n"
-                    report += f"- **New Headline**: {rec['suggested_headline']}\n"
-                    report += f"- **New Message**: {rec['suggested_message']}\n"
-                    report += f"- **Reasoning**: {rec['reasoning']}\n"
-        except json.JSONDecodeError:
-            logger.error("Failed to parse creative recommendations JSON.")
 
     # Step 4: Evaluate
     logger.info("Evaluator: Reviewing report...")
-    eval_result = evaluator.evaluate(query, report)
+    eval_result = evaluator.evaluate(query, report, context["insights_json"])
     logger.info(f"Evaluator Result: {eval_result}")
 
     # Save Outputs
     os.makedirs("reports", exist_ok=True)
-    with open("reports/report.md", "w") as f:
+    report_path = os.path.join("reports", "report.md")
+    with open(report_path, "w") as f:
         f.write(report)
     
-    if "creative_recommendations" in context:
-        with open("reports/creatives.json", "w") as f:
-            f.write(context["creative_recommendations"])
-
-    # Save Insights JSON
-    insights_data = {
-        "query": query,
-        "insights": context.get("insights", ""),
-        "data_summary": context.get("data_summary", "")
-    }
-    with open("reports/insights.json", "w") as f:
-        json.dump(insights_data, f, indent=2)
+    # Save structured data
+    insights_path = os.path.join("reports", "insights.json")
+    with open(insights_path, "w") as f:
+        f.write(context["insights_json"])
             
-    logger.info("✅ Analysis Complete! Report saved to reports/report.md")
+    logger.info(f"✅ Analysis Complete! Report saved to {report_path}")
+    logger.info(f"📄 Full execution logs available in: {current_run_dir}")
 
 if __name__ == "__main__":
     asyncio.run(main())

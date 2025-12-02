@@ -1,99 +1,87 @@
-# Kasparro — Agentic Facebook Performance Analyst
+# Kasparro Agentic FB Analyst (V2 High Bar)
 
-## Quick Start (Step-by-Step)
+A production-grade multi-agent system for analyzing Facebook Ads performance, generating strategic insights, and creating targeted creative recommendations.
 
-Follow these exact steps to set up and run the project:
+## 🚀 Key Features (V2)
 
-### 1. Clone the Repository
+- **Tight Production Pipeline**: Data -> Insight -> Creative workflow where every recommendation is directly linked to a diagnosed issue.
+- **Strict Schema Governance**: Pydantic-based validation ensures data integrity before processing.
+- **Statistical Validation**: Automated checks for confidence scores, evidence strength, and data quality.
+- **Robust Error Handling**: Custom exception hierarchy and structured logging for full traceability.
+- **Observability**: Run-specific log folders with detailed decision logs for every agent action.
+
+## 🛠️ Architecture
+
+The system follows a linear orchestration pattern with specialized agents:
+
+1.  **Planner Agent**: Decomposes the user query into executable steps.
+2.  **Data Agent**: Executes Pandas operations on the dataset with strict schema validation.
+3.  **Insight Agent**: Analyzes data summaries to generate structured JSON insights with confidence scores.
+4.  **Creative Generator**: Consumes structured insights to propose specific ad creatives (Headline + Message).
+5.  **Evaluator Agent**: Validates the final report for statistical rigor and relevance.
+
+## 📦 Installation
+
+1.  **Clone the repository**:
+    ```bash
+    git clone <repository_url>
+    cd <repository_name>
+    ```
+
+2.  **Install dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  **Set up Environment Variables**:
+    Create a `.env` file in the root directory:
+    ```env
+    GROQ_API_KEY=your_groq_api_key_here
+    ```
+
+## 🏃‍♂️ How to Run
+
+Run the analysis with a natural language query:
+
 ```bash
-git clone https://github.com/CHANDU-4706/kasparoo-agentic-fb-analyst-B.Chandrakanth.git
-cd kasparoo-agentic-fb-analyst-B.Chandrakanth
+python src/run.py "Analyze why ROAS dropped last week and suggest creative fixes"
 ```
 
-### 2. Set up Python Environment
+### Outputs
+- **Report**: `reports/report.md` (Final readable report)
+- **Insights**: `reports/insights.json` (Structured data)
+- **Logs**: `logs/run_YYYYMMDD_HHMMSS/app.json` (Full execution trace)
+
+## 🔧 How to Modify
+
+- **Schema**: Edit `src/schema.py` to change input validation or output structures.
+- **Agents**:
+    - `src/agents/data_agent.py`: Data processing logic.
+    - `src/agents/insight_agent.py`: Insight generation prompts.
+    - `src/agents/creative_generator.py`: Creative strategy prompts.
+- **Configuration**: Adjust thresholds and model settings in `config/config.yaml`.
+
+## 🧪 Testing
+
+Run the unit tests to verify schema validation and evaluator logic:
+
 ```bash
-# Check Python version (must be >= 3.10)
-python -V
-
-# Create virtual environment
-python -m venv .venv
-
-# Activate environment
-# Windows:
-.venv\Scripts\activate
-# Mac/Linux:
-source .venv/bin/activate
+pytest tests/
 ```
 
-### 3. Install Dependencies
-```bash
-pip install -r requirements.txt
+## 📂 Project Structure
+
 ```
-
-### 4. Configure API Key
-1. Copy the example environment file:
-   ```bash
-   # Windows
-   copy .env.example .env
-   # Mac/Linux
-   cp .env.example .env
-   ```
-2. Open `.env` and paste your **Groq API Key**:
-   ```text
-   GROQ_API_KEY=gsk_...
-   ```
-
-### 5. Run Analysis
-```bash
-python src/run.py "Analyze ROAS drop in last 7 days"
+├── config/             # Configuration files
+├── data/               # Dataset files
+├── logs/               # Run-specific logs
+├── reports/            # Generated reports
+├── src/
+│   ├── agents/         # Agent implementations
+│   ├── utils/          # Shared utilities (logger, error_handler, validators)
+│   ├── run.py          # Main entry point
+│   └── schema.py       # Pydantic models
+├── tests/              # Unit tests
+├── .env                # Secrets
+└── requirements.txt    # Dependencies
 ```
-
----
-
-## Data
-- **Default**: The system uses `data/sample_fb_ads.csv` by default (configured in `config.yaml`) for instant reproducibility.
-- **Full Data**: To use the full dataset:
-    1. Place `synthetic_fb_ads_undergarments.csv` in the `data/` folder.
-    2. Edit `config/config.yaml` and set `use_sample_data: false`.
-- See `data/README.md` for details.
-
-## Config
-Edit `config/config.yaml`:
-```yaml
-python: "3.10"
-random_seed: 42
-confidence_min: 0.6
-use_sample_data: true
-```
-
-## Repo Map
-- `src/agents/` — planner.py, data_agent.py, insight_agent.py, evaluator.py, creative_generator.py
-- `prompts/` — *.md prompt files with variable placeholders
-- `reports/` — report.md, insights.json, creatives.json
-- `logs/` — trace.json (structured logs)
-- `tests/` — test_evaluator.py
-
-## Run Options
-```bash
-make run  # or: python src/run.py "Analyze ROAS drop"
-```
-
-## Outputs
-- `reports/report.md`
-- `reports/insights.json`
-- `reports/creatives.json`
-
-## Observability
-- Structured JSON logs are saved to `logs/trace.json`.
-- These logs capture inputs, outputs, and timestamps for every agent step.
-
-## Release
-- Tag: `v1.0` (See GitHub Releases)
-
-## Self-Review
-- **Architecture**: Used LangGraph-style orchestration (Planner -> Data -> Insight -> Creative -> Evaluator) for robust reasoning.
-- **Tradeoffs**: 
-    - Selected `llama-3.3-70b` on Groq for speed and performance after Gemini quota issues.
-    - Implemented local JSON logging instead of heavy external dependencies for simplicity.
-    - Used Pandas for data analysis to ensure deterministic calculation of metrics.
-- **Verification**: Verified all agents and outputs.

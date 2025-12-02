@@ -5,9 +5,9 @@ from langchain_core.messages import SystemMessage, HumanMessage
 import yaml
 import os
 import re
-from utils.logger import logger
-from utils.error_handler import safe_execute
-from utils.validators import validate_schema
+from src.utils.logger import logger
+from src.utils.error_handler import safe_execute, DataProcessingError
+from src.utils.validators import validate_schema
 
 # Load config
 with open("config/config.yaml", "r") as f:
@@ -29,7 +29,7 @@ class DataAgent:
                 
             logger.debug(f"Loaded data from {csv_path} with shape {self.df.shape}")
             
-            # Validate Schema
+            # Validate Schema (Strict)
             validate_schema(self.df)
             
         except Exception as e:
@@ -76,6 +76,10 @@ class DataAgent:
         try:
             exec(code, {}, local_vars)
             result = local_vars.get("result")
+            
+            # Log decision
+            logger.decision("DataAgent", instruction, str(result)[:100], "Executed generated pandas code")
+            
             if isinstance(result, pd.DataFrame):
                 return result.to_markdown()
             elif isinstance(result, pd.Series):
@@ -84,4 +88,4 @@ class DataAgent:
                 return str(result)
         except Exception as e:
             logger.error(f"Error executing generated code: {e}")
-            return f"Error executing code: {e}\nCode generated:\n{code}"
+            raise DataProcessingError(f"Code execution failed: {e}")

@@ -1,61 +1,71 @@
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
-from pydantic import BaseModel, Field
-from typing import List
 import yaml
 import os
-from utils.logger import logger
-from utils.error_handler import safe_execute
+import json
+from typing import List
+from src.utils.logger import logger
+from src.utils.error_handler import safe_execute, AgentExecutionError
+from src.schema import CreativeOutput, InsightOutput
 
 # Load config
 with open("config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
-
-class CreativeRecommendation(BaseModel):
-    campaign_name: str
-    current_performance_issue: str
-    suggested_headline: str
-    suggested_message: str
-    reasoning: str
-
-class CreativeSuggestions(BaseModel):
-    recommendations: List[CreativeRecommendation]
 
 class CreativeGenerator:
     def __init__(self):
         logger.info("Initializing CreativeGenerator")
         self.llm = ChatGroq(
             model=config["llm"]["model"],
-            temperature=0.7, # Higher temperature for creativity
+            temperature=0.7, # Higher temp for creativity
             groq_api_key=os.getenv("GROQ_API_KEY")
         )
 
     @safe_execute(default_return=None, log_context="CreativeGenerator.generate", retries=3)
-    def generate(self, insights: str, top_performing_ads: str) -> CreativeSuggestions:
+    def generate(self, insights_json: str, top_ads_context: str) -> CreativeOutput:
         """
-        Generates new creative concepts based on insights and top performers.
+        Generates creative recommendations based on structured insights.
         """
         logger.info("Generating creative recommendations...")
-        system_prompt = """You are a Creative Improvement Generator.
-Your goal is to propose new creative angles for Facebook Ads.
+        
+        system_prompt = """You are a Creative Strategy Agent.
+Your goal is to generate new ad creatives that directly address performance issues identified in the insights.
 
-Inputs:
-1. Insights: Analysis of what is going wrong (e.g., "Ad fatigue", "Low CTR").
-2. Top Performing Ads: Examples of what works well.
+Input:
+1. Insights (JSON list of hypotheses and evidence)
+2. Top Ads Context (What is currently working/not working)
 
-Task:
-Generate 3-5 specific creative recommendations.
-For each recommendation, provide:
-- The target campaign/angle.
-- The issue being addressed.
-- A new Headline.
-- A new Primary Text (Message).
-- Why this should work (Reasoning).
+Output MUST be a valid JSON object matching this schema:
+{
+  "recommendations": [
+    {
+      "campaign_name": "Name of the campaign to target",
+      "current_performance_issue": "The specific issue (e.g., 'CTR dropped 32% due to ad fatigue')",
+      "suggested_headline": "A new, punchy headline",
+      "suggested_message": "The primary ad text",
+      "reasoning": "Why this specific change will fix the issue identified in the insight"
+    }
+  ]
+}
 
-Output must be a JSON object matching the CreativeSuggestions schema.
+CRITICAL:
+- The "reasoning" must explicitly link back to the "evidence" in the insight.
+- Do not generate generic advice. Be specific.
 """
-        structured_llm = self.llm.with_structured_output(CreativeSuggestions)
-        return structured_llm.invoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Insights:\n{insights}\n\nTop Performing Ads:\n{top_performing_ads}")
-        ])
+        
+        structured_llm = self.llm.with_structured_output(CreativeOutput)
+        
+        try:
+            response = structured_llm.invoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"Insights:\n{insights_json}\n\nTop Ads Context:\n{top_ads_context}")
+            ])
+            
+            # Log decision
+            logger.decision("CreativeGenerator", insights_json, str(response)[:100], "Generated creative recommendations")
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Failed to generate creatives: {e}")
+            raise AgentExecutionError("LLM failed to produce valid creative recommendations.")
