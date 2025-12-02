@@ -52,7 +52,7 @@ python src/run.py "Analyze why ROAS dropped last week and suggest creative fixes
 - **Insights**: `reports/insights.json` (Structured data)
 - **Logs**: `logs/run_YYYYMMDD_HHMMSS/app.json` (Full execution trace)
 
-## 🔧 How to Modify
+## 🔧 How to Modify: 
 
 - **Schema**: Edit `src/schema.py` to change input validation or output structures.
 - **Agents**:
